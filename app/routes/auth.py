@@ -1,8 +1,8 @@
 # app/routes/auth.py
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
 from app.models import User, db
-from app.utils.security import hash_password, verify_password, audit_log
+from app.utils.security import verify_password, audit_log
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -29,27 +29,3 @@ def logout():
     logout_user()
     flash('Logged out successfully!', 'success')
     return redirect(url_for('auth.login'))
-
-@auth_bp.route('/api/create-admin', methods=['POST'])
-def create_admin():
-    """Endpoint to create initial admin user (for setup)"""
-    username = request.json.get('username')
-    password = request.json.get('password')
-    
-    if not username or not password:
-        return jsonify({'error': 'Username and password required'}), 400
-    
-    # Check if admin already exists
-    if User.query.filter_by(role='admin').first():
-        return jsonify({'error': 'Admin user already exists'}), 400
-    
-    user = User(
-        username=username,
-        password_hash=hash_password(password),
-        role='admin'
-    )
-    
-    db.session.add(user)
-    db.session.commit()
-    
-    return jsonify({'message': 'Admin user created successfully'})

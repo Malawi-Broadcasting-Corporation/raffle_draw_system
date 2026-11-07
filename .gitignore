@@ -1,9 +1,9 @@
-venv\
-uploads/
-app/__pycache__/
+venv/
+.venv/
 __pycache__/
-instance/
-migrations/
 *.pyc
+instance/
+uploads/
 *.db
+.env
 .DS_Store

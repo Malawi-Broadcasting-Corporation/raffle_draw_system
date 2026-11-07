@@ -1,172 +1,148 @@
 # app/routes/draws.py
-from flask import Blueprint, request, jsonify, render_template
-from flask_login import login_required, current_user
-from app.models import Draw, Winner, Participant, AuditLog, db
-from app.utils.draw_engine import draw_engine
-from app.utils.security import audit_log
-from datetime import datetime
+from functools import wraps
+from flask import Blueprint, request, jsonify, render_template, current_app
+from flask_login import login_required
+from app import db
+from app.models import Draw, Winner, Participant
+from app.services import draw_service
+from app.services.draw_service import DrawError
+from app.utils.security import audit_log, admin_required
+from app.services.prize_service import summarize_prizes
 
 draws_bp = Blueprint('draws', __name__)
 
-@draws_bp.route('/')
-@login_required
-def management():
-    try:
-        draws = Draw.query.order_by(Draw.created_at.desc()).all()
-        # Convert to list of dictionaries to avoid detached instance issues
-        draws_data = []
-        for draw in draws:
-            draws_data.append({
-                'id': draw.id,
-                'name': draw.name,
-                'prize_amount': draw.prize_amount,
-                'number_of_winners': draw.number_of_winners,
-                'status': draw.status,
-                'participant_count': Participant.query.filter_by(draw_id=draw.id, is_verified=True).count()
-            })
-        return render_template('management.html', draws=draws_data)
-    except Exception as e:
-        current_app.logger.error(f"Error in management route: {e}")
-        return render_template('management.html', draws=[])
 
-@draws_bp.route('/api/draws', methods=['GET'])
-@login_required
-def get_draws():
-    try:
-        draws = Draw.query.all()
-        return jsonify([{
-            'id': draw.id,
-            'name': draw.name,
-            'prize_amount': draw.prize_amount,
-            'currency': draw.currency,
-            'number_of_winners': draw.number_of_winners,
-            'status': draw.status,
-            'participant_count': Participant.query.filter_by(draw_id=draw.id, is_verified=True).count(),
-            'created_at': draw.created_at.isoformat() if draw.created_at else None
-        } for draw in draws])
-    except Exception as e:
-        current_app.logger.error(f"Error getting draws: {e}")
-        return jsonify([])
+def _ok(**payload):
+    return jsonify({'success': True, **payload})
 
-@draws_bp.route('/api/draws/<int:draw_id>')
-@login_required
-def get_draw(draw_id):
-    try:
-        draw = Draw.query.get_or_404(draw_id)
-        return jsonify({
-            'id': draw.id,
-            'name': draw.name,
-            'prize_amount': draw.prize_amount,
-            'currency': draw.currency,
-            'number_of_winners': draw.number_of_winners,
-            'status': draw.status
-        })
-    except Exception as e:
-        current_app.logger.error(f"Error getting draw {draw_id}: {e}")
-        return jsonify({'error': 'Draw not found'}), 404
+
+def _fail(message, status=400):
+    return jsonify({'success': False, 'message': message}), status
+
+
+def handle_draw_errors(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except DrawError as e:
+            return _fail(str(e))
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Draw operation failed")
+            return _fail("Unexpected error, check the server logs", 500)
+    return wrapper
+
 
 @draws_bp.route('/api/draws/<int:draw_id>/start', methods=['POST'])
 @login_required
 @audit_log('Start draw')
+@handle_draw_errors
 def start_draw(draw_id):
-    try:
-        success, message = draw_engine.start_draw(draw_id)
-        return jsonify({'success': success, 'message': message})
-    except Exception as e:
-        current_app.logger.error(f"Error starting draw: {e}")
-        return jsonify({'success': False, 'message': f'Error starting draw: {str(e)}'})
+    return _ok(state=draw_service.start_draw(draw_id))
 
-@draws_bp.route('/api/draws/stop', methods=['POST'])
+
+@draws_bp.route('/api/draws/<int:draw_id>/stop', methods=['POST'])
 @login_required
 @audit_log('Stop draw')
-def stop_draw():
-    try:
-        success, message = draw_engine.stop_draw()
-        return jsonify({'success': success, 'message': message})
-    except Exception as e:
-        current_app.logger.error(f"Error stopping draw: {e}")
-        return jsonify({'success': False, 'message': f'Error stopping draw: {str(e)}'})
+@handle_draw_errors
+def stop_draw(draw_id):
+    return _ok(state=draw_service.stop_draw(draw_id))
 
-@draws_bp.route('/api/draws/draw-winner', methods=['POST'])
+
+@draws_bp.route('/api/draws/<int:draw_id>/draw-winner', methods=['POST'])
 @login_required
 @audit_log('Draw winner')
-def draw_winner_route():
-    try:
-        if not draw_engine.is_running:
-            return jsonify({'success': False, 'message': 'No active draw'})
-        
-        winner = draw_engine.draw_next_winner()
-        if winner:
-            return jsonify({'success': True, 'winner': winner})
-        else:
-            return jsonify({'success': False, 'message': 'No more winners to draw'})
-    except Exception as e:
-        current_app.logger.error(f"Error drawing winner: {e}")
-        return jsonify({'success': False, 'message': f'Error drawing winner: {str(e)}'})
+@handle_draw_errors
+def draw_winner(draw_id):
+    return _ok(winner=draw_service.draw_next_winner(draw_id))
 
-@draws_bp.route('/api/draws/status')
-def draw_status():
-    try:
-        current_draw_id = draw_engine.current_draw['id'] if draw_engine.current_draw else None
-        return jsonify({
-            'is_running': draw_engine.is_running,
-            'current_draw': current_draw_id,
-            'winners_drawn': draw_engine.winners_drawn,
-            'total_winners': draw_engine.total_winners
-        })
-    except Exception as e:
-        current_app.logger.error(f"Error getting draw status: {e}")
-        return jsonify({
-            'is_running': False,
-            'current_draw': None,
-            'winners_drawn': 0,
-            'total_winners': 0
-        })
 
-@draws_bp.route('/api/draws/animation')
-def get_animation():
-    try:
-        if not draw_engine.is_running:
-            return jsonify({'success': False, 'sequence': []})
-        
-        sequence = draw_engine.get_animation_sequence()
-        return jsonify({'success': True, 'sequence': sequence})
-    except Exception as e:
-        current_app.logger.error(f"Error getting animation: {e}")
-        return jsonify({'success': False, 'sequence': []})
+@draws_bp.route('/api/winners/<int:winner_id>/void', methods=['POST'])
+@login_required
+@admin_required
+@audit_log('Void winner')
+@handle_draw_errors
+def void_winner(winner_id):
+    return _ok(state=draw_service.void_winner(winner_id))
+
+
+# Public: the TV screen polls these
+@draws_bp.route('/api/draws/<int:draw_id>/state')
+@handle_draw_errors
+def draw_state(draw_id):
+    return _ok(state=draw_service.get_state(draw_id))
+
+
+@draws_bp.route('/api/draws/<int:draw_id>/animation')
+@handle_draw_errors
+def draw_animation(draw_id):
+    return _ok(sequence=draw_service.get_animation_numbers(draw_id))
+
+
+def _draw_row(draw, counts):
+    return {
+        'id': draw.id,
+        'name': draw.name,
+        'status': draw.status,
+        'currency': draw.currency,
+        'total_winners': draw.total_winners,
+        'prize_summary': summarize_prizes(draw.prizes),
+        'participant_count': counts.get(draw.id, 0),
+        'created_at': draw.created_at.isoformat() if draw.created_at else None,
+    }
+
+
+@draws_bp.route('/')
+@login_required
+def management():
+    counts = draw_service.participant_counts()
+    draws = Draw.query.order_by(Draw.created_at.desc()).all()
+    return render_template('management.html', draws=[_draw_row(d, counts) for d in draws])
+
+
+@draws_bp.route('/api/draws')
+@login_required
+def get_draws():
+    counts = draw_service.participant_counts()
+    draws = Draw.query.order_by(Draw.created_at.desc()).all()
+    return jsonify([_draw_row(d, counts) for d in draws])
+
+
+@draws_bp.route('/api/draws/live')
+@handle_draw_errors
+def live_draw():
+    live = Draw.query.filter_by(status='active').first()
+    return _ok(state=draw_service.get_state(live.id) if live else None)
+
 
 @draws_bp.route('/api/winners')
 @login_required
 def get_winners():
-    try:
-        winners = Winner.query.join(Participant).join(Draw).order_by(Winner.won_at.desc()).limit(10).all()
-        return jsonify([{
-            'phone_number': winner.participant.phone_number,
-            'prize_amount': winner.draw.prize_amount,
-            'draw_name': winner.draw.name,
-            'position': winner.position,
-            'won_at': winner.won_at.isoformat() if winner.won_at else None
-        } for winner in winners])
-    except Exception as e:
-        current_app.logger.error(f"Error getting winners: {e}")
-        return jsonify([])
+    limit = min(request.args.get('limit', 10, type=int), 100)
+    winners = Winner.query.order_by(Winner.won_at.desc()).limit(limit).all()
+    return jsonify([{
+        'id': w.id,
+        'phone_number': w.participant.phone_number,
+        'prize': w.prize.name,
+        'draw_name': w.draw.name,
+        'position': w.position,
+        'status': w.status,
+        'won_at': w.won_at.isoformat() if w.won_at else None,
+    } for w in winners])
+
 
 @draws_bp.route('/tv')
-def tv_display():
+@draws_bp.route('/tv/<int:draw_id>')
+def tv_display(draw_id=None):
+    pinned = draw_id is not None
+    state = None
     try:
-        current_draw_data = None
-        if draw_engine.current_draw:
-            # Get fresh draw data from database
-            current_draw = Draw.query.get(draw_engine.current_draw['id'])
-            if current_draw:
-                current_draw_data = {
-                    'id': current_draw.id,
-                    'name': current_draw.name,
-                    'prize_amount': current_draw.prize_amount,
-                    'number_of_winners': current_draw.number_of_winners,
-                    'status': current_draw.status
-                }
-        return render_template('tv_display.html', current_draw=current_draw_data)
-    except Exception as e:
-        current_app.logger.error(f"Error in TV display route: {e}")
-        return render_template('tv_display.html', current_draw=None)
+        if draw_id is None:
+            live = Draw.query.filter_by(status='active').first()
+            draw_id = live.id if live else None
+        if draw_id:
+            state = draw_service.get_state(draw_id)
+    except DrawError:
+        state = None
+    return render_template('tv_display.html', current_draw=state, pinned=pinned)

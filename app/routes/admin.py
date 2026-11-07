@@ -5,6 +5,7 @@ from app import db
 from app.models import Draw, AuditLog, Winner, Participant
 from app.utils.security import admin_required, audit_log
 from datetime import datetime, timedelta
+from app.services.prize_service import parse_prizes
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -37,24 +38,58 @@ def admin_panel():
 def create_draw_route():
     try:
         data = request.get_json()
-        
+        currency = data.get('currency', 'MWK')
+
+        raw_prizes = data.get('prizes')
+        if not raw_prizes and data.get('prize_amount') is not None:
+            # Legacy form: one cash prize x N winners (until the UI is updated)
+            amount = float(data['prize_amount'])
+            raw_prizes = [{
+                'name': f"{currency} {amount:,.0f}", 'prize_type': 'cash', 'value': amount,
+                'currency': currency, 'quantity': data.get('number_of_winners', 1),
+            }]
+
         draw = Draw(
             name=data['name'],
             description=data.get('description', ''),
-            prize_amount=float(data['prize_amount']),
-            number_of_winners=int(data['number_of_winners']),
-            scheduled_for=datetime.fromisoformat(data['scheduled_for'].replace('Z', '+00:00')) if data.get('scheduled_for') else None
+            currency=currency,
+            scheduled_for=(datetime.fromisoformat(data['scheduled_for'].replace('Z', '+00:00'))
+                           if data.get('scheduled_for') else None),
         )
-        
+        draw.prizes = parse_prizes(raw_prizes)
+
         db.session.add(draw)
         db.session.commit()
-        
         return jsonify({'success': True, 'message': 'Draw created successfully', 'draw_id': draw.id})
-        
+
+    except KeyError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Missing field: {e}'}), 400
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error creating draw: {e}")
-        return jsonify({'success': False, 'message': f'Error creating draw: {str(e)}'})
+        return jsonify({'success': False, 'message': 'Error creating draw'}), 500
+
+
+@admin_bp.route('/admin/draws/<int:draw_id>/prizes', methods=['PUT'])
+@login_required
+@admin_required
+@audit_log('Update prizes')
+def update_prizes(draw_id):
+    draw = db.get_or_404(Draw, draw_id)
+    if Winner.query.filter_by(draw_id=draw_id).first():
+        return jsonify({'success': False,
+                        'message': 'Prizes cannot be changed once winners have been drawn'}), 409
+    try:
+        draw.prizes = parse_prizes((request.get_json() or {}).get('prizes'))
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Prizes updated'})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 400
 
 @admin_bp.route('/admin/draws/<int:draw_id>', methods=['DELETE'])
 @login_required
