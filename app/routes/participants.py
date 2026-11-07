@@ -276,12 +276,27 @@ def get_participants_stats():
             'message': f'Error getting statistics: {str(e)}'
         })
 
+def _refuse_if_locked(participant_ids):
+    """Entries of a locked draw are part of its fingerprint and must never change."""
+    locked = (db.session.query(Draw.name)
+              .join(Participant, Participant.draw_id == Draw.id)
+              .filter(Participant.id.in_(participant_ids), Draw.locked_at.isnot(None))
+              .first())
+    if locked:
+        return jsonify({'success': False,
+                        'message': f"Entries of '{locked[0]}' are locked and can't be changed"}), 409
+    return None
+
+
 @participants_bp.route('/api/participants/delete/<int:participant_id>', methods=['DELETE'])
 @login_required
 @admin_required
 @audit_log('Delete participant')
 def delete_participant(participant_id):
     """Delete a participant"""
+    refused = _refuse_if_locked([participant_id])
+    if refused:
+        return refused
     try:
         participant = Participant.query.get_or_404(participant_id)
         db.session.delete(participant)
@@ -314,7 +329,10 @@ def bulk_delete_participants():
                 'success': False,
                 'message': 'No participants selected'
             })
-        
+        refused = _refuse_if_locked(participant_ids)
+        if refused:
+            return refused
+
         # Delete participants
         deleted_count = Participant.query.filter(Participant.id.in_(participant_ids)).delete()
         db.session.commit()
@@ -337,6 +355,9 @@ def bulk_delete_participants():
 @audit_log('Verify participant')
 def verify_participant(participant_id):
     """Verify a participant"""
+    refused = _refuse_if_locked([participant_id])
+    if refused:
+        return refused
     try:
         participant = Participant.query.get_or_404(participant_id)
         participant.is_verified = True
@@ -369,7 +390,10 @@ def bulk_verify_participants():
                 'success': False,
                 'message': 'No participants selected'
             })
-        
+        refused = _refuse_if_locked(participant_ids)
+        if refused:
+            return refused
+
         # Verify participants
         updated_count = Participant.query.filter(
             Participant.id.in_(participant_ids)

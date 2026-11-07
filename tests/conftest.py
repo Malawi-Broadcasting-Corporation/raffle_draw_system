@@ -41,6 +41,18 @@ def whitelist(db):
 
 
 @pytest.fixture
+def ready():
+    """Lock a draw, give it a manual seed and start it."""
+    from app.services import draw_service
+
+    def _ready(draw, seed='351624'):
+        draw_service.lock_draw(draw.id)
+        draw_service.seed_manually(draw.id, seed, 'Dice rolled on air (test)')
+        draw_service.start_draw(draw.id)
+    return _ready
+
+
+@pytest.fixture
 def client(app, db):
     db.session.add(User(username='admin', password_hash=hash_password('pw'), role='admin'))
     db.session.commit()

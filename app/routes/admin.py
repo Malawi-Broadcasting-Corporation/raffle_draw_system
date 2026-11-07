@@ -91,9 +91,9 @@ def create_draw_route():
 @audit_log('Update prizes')
 def update_prizes(draw_id):
     draw = db.get_or_404(Draw, draw_id)
-    if Winner.query.filter_by(draw_id=draw_id).first():
+    if draw.is_locked or Winner.query.filter_by(draw_id=draw_id).first():
         return jsonify({'success': False,
-                        'message': 'Prizes cannot be changed once winners have been drawn'}), 409
+                        'message': 'Prizes cannot be changed once the draw is locked'}), 409
     try:
         draw.prizes = parse_prizes((request.get_json() or {}).get('prizes'))
         db.session.commit()

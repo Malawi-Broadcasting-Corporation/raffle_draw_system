@@ -38,18 +38,18 @@ def test_pool_order_is_stable(make_draw):
     assert [phone for _, phone in build_pool(draw)] == ['265888000001', '265999000001', '265999000009']
 
 
-def test_start_counts_numbers_not_tickets(make_draw, db):
+def test_lock_counts_numbers_not_tickets(make_draw, db):
     # 4 tickets but only 2 different numbers: 3 prizes can't all be won.
     draw = make_draw(prizes=(('TV', 3),))
     import_file(draw.id, 'e.csv', ENTRIES)
     with pytest.raises(DrawError, match='Not enough eligible numbers'):
-        draw_service.start_draw(draw.id)
+        draw_service.lock_draw(draw.id)
 
 
-def test_number_with_many_tickets_wins_only_once(make_draw):
+def test_number_with_many_tickets_wins_only_once(make_draw, ready):
     draw = make_draw(prizes=(('TV', 2),))
     import_file(draw.id, 'e.csv', ENTRIES)
-    draw_service.start_draw(draw.id)
+    ready(draw)
     won = {draw_service.draw_next_winner(draw.id)['phone_number'] for _ in range(2)}
     assert won == {'265999000001', '265888000002'}
 
@@ -62,11 +62,10 @@ def test_entry_mode_can_change_before_lock(make_draw):
         whitelist_service.update_draw_rules(draw.id, entry_mode='per_hour')
 
 
-def test_rules_frozen_once_winners_exist(make_draw):
+def test_rules_frozen_once_locked(make_draw):
     draw = make_draw(prizes=(('TV', 1),))
     import_file(draw.id, 'e.csv', ENTRIES)
-    draw_service.start_draw(draw.id)
-    draw_service.draw_next_winner(draw.id)
+    draw_service.lock_draw(draw.id)
     with pytest.raises(ImportRejected, match='locked'):
         whitelist_service.update_draw_rules(draw.id, entry_mode=ENTRY_PER_NUMBER)
 

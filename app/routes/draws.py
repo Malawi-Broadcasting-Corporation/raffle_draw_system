@@ -42,6 +42,51 @@ def start_draw(draw_id):
     return _ok(state=draw_service.start_draw(draw_id))
 
 
+@draws_bp.route('/api/draws/<int:draw_id>/lock', methods=['POST'])
+@login_required
+@audit_log('Lock entry list')
+@handle_draw_errors
+def lock_draw(draw_id):
+    return _ok(state=draw_service.lock_draw(draw_id))
+
+
+@draws_bp.route('/api/draws/<int:draw_id>/unlock', methods=['POST'])
+@login_required
+@admin_required
+@audit_log('Unlock entry list')
+@handle_draw_errors
+def unlock_draw(draw_id):
+    return _ok(state=draw_service.unlock_draw(draw_id))
+
+
+@draws_bp.route('/api/draws/<int:draw_id>/seed/drand', methods=['POST'])
+@login_required
+@audit_log('Take drand seed')
+@handle_draw_errors
+def seed_drand(draw_id):
+    return _ok(state=draw_service.seed_from_drand(draw_id))
+
+
+@draws_bp.route('/api/draws/<int:draw_id>/seed/manual', methods=['POST'])
+@login_required
+@audit_log('Enter manual seed')
+@handle_draw_errors
+def seed_manual(draw_id):
+    data = request.get_json(silent=True) or {}
+    return _ok(state=draw_service.seed_manually(draw_id, data.get('seed'), data.get('reference')))
+
+
+@draws_bp.route('/api/draws/<int:draw_id>/replay')
+@login_required
+@handle_draw_errors
+def replay_draw(draw_id):
+    result = draw_service.replay_draw(draw_id)
+    result['picks'] = [dict(zip(('position', 'expected_entry', 'recorded_entry', 'ok'), p))
+                       for p in result['picks']]
+    result['all_ok'] = result['fingerprint_ok'] and all(p['ok'] for p in result['picks'])
+    return _ok(replay=result)
+
+
 @draws_bp.route('/api/draws/<int:draw_id>/stop', methods=['POST'])
 @login_required
 @audit_log('Stop draw')

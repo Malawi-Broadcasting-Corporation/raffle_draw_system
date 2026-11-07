@@ -105,13 +105,15 @@ run.py             # Entry point
 
 ## Running a draw
 
-1. **Admin** creates a draw and adds its prizes.
-2. Participants are loaded through an upload or the API feed, then verified.
-3. **Operator** opens the TV display on the broadcast screen and starts the draw.
-4. Winners are drawn one by one in prize order. The draw closes automatically when every prize has a winner.
-5. If a winner can't be reached, an admin voids them and that prize is drawn again.
+1. **Admin** creates a draw, adds its prizes and chooses its rules: one entry per SMS or per number, and optionally a whitelist of numbers allowed to win.
+2. Entries are loaded through an upload or the API feed.
+3. **Lock** the entry list. It is frozen and its SHA-256 fingerprint is recorded.
+4. **Take the seed**: the next public [drand](https://drand.love) round after the lock, or a manual value such as dice rolled on air.
+5. **Start** the draw and pick winners one by one in prize order. The draw closes when every prize has a winner.
+6. If a winner can't be reached, they are voided with a reason and that prize is drawn again.
+7. Anyone with the database can check the draw afterwards: `flask --app run replay-draw <draw_id>`.
 
-Only one draw can be live at a time. A draw can't start until it has enough verified participants for its remaining prizes.
+Only one draw can be live at a time. A draw can't be locked until enough different numbers can win its prizes.
 
 ## Project status
 
@@ -119,7 +121,9 @@ The system is being reworked from a single-cash-prize model to multiple prizes p
 
 ## Transparency
 
-These draws decide who receives money and prizes, so the code is public on purpose. Anyone can read exactly how winners are chosen. The selection logic is in [`app/services/draw_service.py`](app/services/draw_service.py).
+These draws decide who receives money and prizes, so the code is public on purpose. Anyone can read exactly how winners are chosen.
+
+Every draw is **checkable**. The entry list is locked and fingerprinted before a seed is taken from a source MBC can't control. Each winner is then calculated from the fingerprint, the seed and the winner's position, so the same inputs always give the same winners and any change to the entries is detected. The algorithm is in [`app/services/checkable.py`](app/services/checkable.py), and is short enough to re-implement independently.
 
 ## Contributing
 
