@@ -16,8 +16,14 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     DEBUG = False
 
+class TestingConfig(Config):
+    TESTING = True
+    SECRET_KEY = 'test-only-secret'
+    SQLALCHEMY_DATABASE_URI = 'sqlite://'  # in memory
+
 config = {
     'development': DevelopmentConfig,
     'production': ProductionConfig,
+    'testing': TestingConfig,
     'default': DevelopmentConfig,
 }

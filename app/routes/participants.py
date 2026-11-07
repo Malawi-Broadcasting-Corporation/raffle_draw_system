@@ -2,11 +2,11 @@
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
-import os
 import json
 from app.extensions import db
 from app.models import Participant, Draw, APIConfig, APIResponseLog
-from app.utils.file_processing import process_csv_file, process_excel_file, get_allowed_extensions
+from app.services import import_service
+from app.services.import_service import ImportRejected
 from app.utils.security import audit_log, admin_required
 from app.utils.api_service import api_service
 import requests
@@ -31,46 +31,21 @@ def manage_participants():
 @login_required
 @audit_log('Upload participants')
 def upload_participants():
-    if 'file' not in request.files:
-        return jsonify({'success': False, 'message': 'No file selected'})
-    
-    file = request.files['file']
-    draw_id = request.form.get('draw_id')
-    
+    file = request.files.get('file')
+    draw_id = request.form.get('draw_id', type=int)
+    if not file or not file.filename:
+        return jsonify({'success': False, 'message': 'No file selected'}), 400
     if not draw_id:
-        return jsonify({'success': False, 'message': 'No draw selected'})
-    
-    if file.filename == '':
-        return jsonify({'success': False, 'message': 'No file selected'})
-    
-    # Check file extension
-    if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in get_allowed_extensions():
-        return jsonify({'success': False, 'message': 'Invalid file type. Allowed: CSV, Excel'})
-    
-    # Create uploads directory if it doesn't exist
-    upload_dir = os.path.join('uploads', 'participants')
-    os.makedirs(upload_dir, exist_ok=True)
-    
-    # Save file
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(upload_dir, filename)
-    file.save(file_path)
-    
-    # Process file based on extension
-    file_ext = filename.rsplit('.', 1)[1].lower()
-    
-    if file_ext == 'csv':
-        success, message = process_csv_file(file_path, int(draw_id))
-    else:  # Excel files
-        success, message = process_excel_file(file_path, int(draw_id))
-    
-    # Clean up uploaded file
+        return jsonify({'success': False, 'message': 'No draw selected'}), 400
+
     try:
-        os.remove(file_path)
-    except:
-        pass
-    
-    return jsonify({'success': success, 'message': message})
+        summary = import_service.import_file(
+            draw_id, secure_filename(file.filename), file.read(), user_id=current_user.id)
+    except ImportRejected as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+    return jsonify({'success': True, 'message': summary.message(), 'summary': summary.to_dict()})
 
 @participants_bp.route('/api/participants/<int:draw_id>')
 @login_required
@@ -79,6 +54,9 @@ def get_participants(draw_id):
     return jsonify([{
         'id': p.id,
         'phone_number': p.phone_number,
+        'name': p.name,
+        'excluded_reason': p.excluded_reason,
+        'batch_id': p.batch_id,
         'source': p.source,
         'added_at': p.added_at.isoformat() if p.added_at else None,
         'is_verified': p.is_verified,
@@ -87,7 +65,7 @@ def get_participants(draw_id):
 
 @participants_bp.route('/api/participants/count/<int:draw_id>')
 def get_participant_count(draw_id):
-    count = Participant.query.filter_by(draw_id=draw_id, is_verified=True).count()
+    count = Participant.query.filter_by(draw_id=draw_id, is_verified=True, excluded_reason=None).count()
     return jsonify({'count': count})
 
 @participants_bp.route('/api/api-config', methods=['POST'])
