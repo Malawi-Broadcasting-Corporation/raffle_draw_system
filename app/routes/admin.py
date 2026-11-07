@@ -9,7 +9,10 @@ from app.utils.security import admin_required, audit_log
 from datetime import datetime
 from sqlalchemy import func
 from app.services.draw_service import participant_counts
+from app.services import whitelist_service
+from app.services.import_service import ImportRejected
 from app.services.prize_service import parse_prizes, summarize_prizes
+from werkzeug.utils import secure_filename
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -181,3 +184,60 @@ def get_stats():
             'total_winners': 0,
             'total_prizes': 0
         })
+
+# ---------------------------------------------------------------- draw rules & whitelist
+
+def _rules_error(e):
+    db.session.rollback()
+    return jsonify({'success': False, 'message': str(e)}), 400
+
+
+@admin_bp.route('/admin/draws/<int:draw_id>/rules', methods=['PATCH'])
+@login_required
+@admin_required
+@audit_log('Update draw rules')
+def update_draw_rules(draw_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        draw = whitelist_service.update_draw_rules(
+            draw_id, entry_mode=data.get('entry_mode'), whitelist_enabled=data.get('whitelist_enabled'))
+    except ImportRejected as e:
+        return _rules_error(e)
+    return jsonify({'success': True, 'entry_mode': draw.entry_mode,
+                    'whitelist_enabled': draw.whitelist_enabled})
+
+
+@admin_bp.route('/admin/draws/<int:draw_id>/whitelist', methods=['GET'])
+@login_required
+@admin_required
+def get_whitelist(draw_id):
+    try:
+        return jsonify({'success': True, **whitelist_service.whitelist_summary(draw_id)})
+    except ImportRejected as e:
+        return jsonify({'success': False, 'message': str(e)}), 404
+
+
+@admin_bp.route('/admin/draws/<int:draw_id>/whitelist', methods=['POST'])
+@login_required
+@admin_required
+@audit_log('Upload whitelist')
+def upload_whitelist(draw_id):
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'success': False, 'message': 'No file selected'}), 400
+    try:
+        result = whitelist_service.replace_whitelist(draw_id, secure_filename(file.filename), file.read())
+    except ImportRejected as e:
+        return _rules_error(e)
+    return jsonify({'success': True, **result})
+
+
+@admin_bp.route('/admin/draws/<int:draw_id>/whitelist', methods=['DELETE'])
+@login_required
+@admin_required
+@audit_log('Remove whitelist')
+def delete_whitelist(draw_id):
+    try:
+        return jsonify({'success': True, **whitelist_service.clear_whitelist(draw_id)})
+    except ImportRejected as e:
+        return _rules_error(e)

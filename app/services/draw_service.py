@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.models import Draw, Participant, Winner
+from app.models import ENTRY_PER_NUMBER, Draw, Participant, Winner
 from app.utils.phone import mask_phone
 
 _rng = secrets.SystemRandom()
@@ -47,19 +47,46 @@ def _eligible_filter(query, draw_id):
     )
 
 
-def _eligible_ids(draw_id):
-    """Eligible entries whose phone number has never won in this draw (void winners stay excluded)."""
-    won_phones = (
+def build_pool(draw):
+    """The draw's tickets as [(participant_id, phone)], in a fixed order (phone, then id).
+
+    per_sms:    every eligible entry is a ticket, so 3 SMS = 3 chances.
+    per_number: one ticket per phone number (its earliest entry), however many SMS it sent.
+    The fixed order matters for checkable draws: the same entries always give the same pool.
+    """
+    rows = (
+        _eligible_filter(db.session.query(Participant.id, Participant.phone_number), draw.id)
+        .order_by(Participant.phone_number, Participant.id)
+        .all()
+    )
+    tickets = [(pid, phone) for pid, phone in rows]
+    if draw.entry_mode == ENTRY_PER_NUMBER:
+        seen = set()
+        tickets = [t for t in tickets if not (t[1] in seen or seen.add(t[1]))]
+    return tickets
+
+
+def _won_phones(draw_id):
+    """Every number that has won in this draw, including voided winners (they can't win again)."""
+    rows = (
         db.session.query(Participant.phone_number)
         .join(Winner, Winner.participant_id == Participant.id)
         .filter(Winner.draw_id == draw_id)
-    )
-    rows = (
-        _eligible_filter(db.session.query(Participant.id), draw_id)
-        .filter(~Participant.phone_number.in_(won_phones))
         .all()
     )
-    return [r[0] for r in rows]
+    return {r[0] for r in rows}
+
+
+def _eligible_ids(draw):
+    """Ticket entry ids whose phone number hasn't won in this draw yet."""
+    won = _won_phones(draw.id)
+    return [pid for pid, phone in build_pool(draw) if phone not in won]
+
+
+def eligible_number_count(draw):
+    """Distinct numbers that could still win (each number wins at most once)."""
+    won = _won_phones(draw.id)
+    return len({phone for _, phone in build_pool(draw) if phone not in won})
 
 
 def participant_counts():
@@ -92,6 +119,8 @@ def get_state(draw_id):
         'name': draw.name,
         'status': draw.status,
         'is_running': draw.status == 'active',
+        'entry_mode': draw.entry_mode,
+        'whitelist_enabled': draw.whitelist_enabled,
         'winners_drawn': drawn,
         'total_winners': total,
         'next_prize': _prize_dict(*upcoming) if upcoming else None,
@@ -115,9 +144,10 @@ def start_draw(draw_id):
     if remaining <= 0:
         raise DrawError("All prizes for this draw have already been drawn")
 
-    eligible = len(_eligible_ids(draw_id))
+    eligible = eligible_number_count(draw)
     if eligible < remaining:
-        raise DrawError(f"Not enough verified participants. Need {remaining}, have {eligible}")
+        raise DrawError(f"Not enough eligible numbers: {remaining} prizes left, "
+                        f"{eligible} numbers that can still win")
 
     draw.status = 'active'
     db.session.commit()
@@ -147,7 +177,7 @@ def draw_next_winner(draw_id):
             raise DrawError("All prizes have already been drawn")
         prize, nth = slot
 
-        eligible = _eligible_ids(draw_id)
+        eligible = _eligible_ids(draw)
         if not eligible:
             raise DrawError("No eligible participants left")
 
