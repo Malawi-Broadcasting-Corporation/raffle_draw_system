@@ -1,11 +1,15 @@
 # app/routes/admin.py
 from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
-from app import db
-from app.models import Draw, AuditLog, Winner, Participant
+from app.extensions import db
+from app.models import (
+    Draw, AuditLog, ImportBatch, Winner, WhitelistEntry, Prize, ENTRY_MODES, ENTRY_PER_SMS,
+)
 from app.utils.security import admin_required, audit_log
-from datetime import datetime, timedelta
-from app.services.prize_service import parse_prizes
+from datetime import datetime
+from sqlalchemy import func
+from app.services.draw_service import participant_counts
+from app.services.prize_service import parse_prizes, summarize_prizes
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -15,17 +19,15 @@ admin_bp = Blueprint('admin', __name__)
 def admin_panel():
     try:
         draws = Draw.query.order_by(Draw.created_at.desc()).all()
-        # Convert to list to avoid detached instance issues in templates
-        draws_data = []
-        for draw in draws:
-            draws_data.append({
-                'id': draw.id,
-                'name': draw.name,
-                'prize_amount': draw.prize_amount,
-                'number_of_winners': draw.number_of_winners,
-                'status': draw.status,
-                'participants': Participant.query.filter_by(draw_id=draw.id).all()
-            })
+        counts = participant_counts()
+        draws_data = [{
+            'id': draw.id,
+            'name': draw.name,
+            'prize_summary': summarize_prizes(draw.prizes),
+            'total_winners': draw.total_winners,
+            'status': draw.status,
+            'participant_count': counts.get(draw.id, 0),
+        } for draw in draws]
         return render_template('admin.html', draws=draws_data)
     except Exception as e:
         current_app.logger.error(f"Error in admin panel: {e}")
@@ -49,10 +51,16 @@ def create_draw_route():
                 'currency': currency, 'quantity': data.get('number_of_winners', 1),
             }]
 
+        entry_mode = data.get('entry_mode', ENTRY_PER_SMS)
+        if entry_mode not in ENTRY_MODES:
+            raise ValueError(f"entry_mode must be one of {', '.join(ENTRY_MODES)}")
+
         draw = Draw(
             name=data['name'],
             description=data.get('description', ''),
             currency=currency,
+            entry_mode=entry_mode,
+            whitelist_enabled=bool(data.get('whitelist_enabled', False)),
             scheduled_for=(datetime.fromisoformat(data['scheduled_for'].replace('Z', '+00:00'))
                            if data.get('scheduled_for') else None),
         )
@@ -97,13 +105,16 @@ def update_prizes(draw_id):
 @audit_log('Delete draw')
 def delete_draw(draw_id):
     try:
-        draw = Draw.query.get_or_404(draw_id)
-        
-        # Delete related records
-        Winner.query.filter_by(draw_id=draw_id).delete()
-        Participant.query.filter_by(draw_id=draw_id).delete()
-        
-        db.session.delete(draw)
+        draw = db.get_or_404(Draw, draw_id)
+
+        # A draw that has been locked or has winners is part of the public record: cancel it instead.
+        if draw.is_locked or draw.winners:
+            return jsonify({'success': False,
+                            'message': 'This draw has been locked or has winners and cannot be deleted'}), 409
+
+        ImportBatch.query.filter_by(draw_id=draw_id).delete()
+        WhitelistEntry.query.filter_by(draw_id=draw_id).delete()
+        db.session.delete(draw)  # prizes and entries cascade
         db.session.commit()
         
         return jsonify({'success': True, 'message': 'Draw deleted successfully'})
@@ -146,12 +157,16 @@ def get_stats():
     try:
         total_draws = Draw.query.count()
         completed_draws = Draw.query.filter_by(status='completed').count()
-        total_winners = Winner.query.count()
-        
-        # Calculate total prizes
-        completed_draws_obj = Draw.query.filter_by(status='completed').all()
-        total_prizes = sum(draw.prize_amount for draw in completed_draws_obj)
-        
+        total_winners = Winner.query.filter(Winner.status != 'void').count()
+
+        # Value of prizes won (prizes without a value, e.g. goods, are not counted)
+        total_prizes = float(
+            db.session.query(func.coalesce(func.sum(Prize.value), 0))
+            .join(Winner, Winner.prize_id == Prize.id)
+            .filter(Winner.status != 'void')
+            .scalar()
+        )
+
         return jsonify({
             'total_draws': total_draws,
             'completed_draws': completed_draws,

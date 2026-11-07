@@ -4,7 +4,8 @@ import secrets
 from functools import wraps
 from flask import request, jsonify, current_app
 from flask_login import current_user
-from app.models import AuditLog, db
+from app.extensions import db
+from app.models import AuditLog
 from flask import make_response
 import json
 

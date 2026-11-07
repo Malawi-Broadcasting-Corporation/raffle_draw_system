@@ -32,10 +32,9 @@
                     <option value="">Select a draw...</option>
                     {% for draw in draws %}
                     <option value="{{ draw.id }}" 
-                            data-prize="{{ draw.prize_amount }}" 
-                            data-winners="{{ draw.number_of_winners }}"
+                            data-winners="{{ draw.total_winners }}"
                             data-status="{{ draw.status }}">
-                        {{ draw.name }} - MWK {{ "{:,.0f}".format(draw.prize_amount) }} 
+                        {{ draw.name }} - {{ draw.prize_summary }}
                         {% if draw.status == 'active' %}(ACTIVE){% endif %}
                         {% if draw.status == 'completed' %}(COMPLETED){% endif %}
                     </option>

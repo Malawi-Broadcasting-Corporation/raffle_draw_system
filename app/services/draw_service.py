@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from app import db
+from app.extensions import db
 from app.models import Draw, Participant, Winner
 from app.utils.phone import mask_phone
 
@@ -38,16 +38,39 @@ def _prize_progress(draw):
     return [(p, counts.get(p.id, 0)) for p in draw.prizes]
 
 
+def _eligible_filter(query, draw_id):
+    """Entries that may win: verified and not excluded (e.g. not on the whitelist)."""
+    return query.filter(
+        Participant.draw_id == draw_id,
+        Participant.is_verified.is_(True),
+        Participant.excluded_reason.is_(None),
+    )
+
+
 def _eligible_ids(draw_id):
-    """Verified participants who have never won in this draw (void winners stay excluded)."""
-    already_won = db.session.query(Winner.participant_id).filter(Winner.draw_id == draw_id)
+    """Eligible entries whose phone number has never won in this draw (void winners stay excluded)."""
+    won_phones = (
+        db.session.query(Participant.phone_number)
+        .join(Winner, Winner.participant_id == Participant.id)
+        .filter(Winner.draw_id == draw_id)
+    )
     rows = (
-        db.session.query(Participant.id)
-        .filter(Participant.draw_id == draw_id, Participant.is_verified.is_(True))
-        .filter(~Participant.id.in_(already_won))
+        _eligible_filter(db.session.query(Participant.id), draw_id)
+        .filter(~Participant.phone_number.in_(won_phones))
         .all()
     )
     return [r[0] for r in rows]
+
+
+def participant_counts():
+    """{draw_id: number of eligible entries} for all draws."""
+    rows = (
+        db.session.query(Participant.draw_id, func.count(Participant.id))
+        .filter(Participant.is_verified.is_(True), Participant.excluded_reason.is_(None))
+        .group_by(Participant.draw_id)
+        .all()
+    )
+    return dict(rows)
 
 
 def _prize_dict(prize, nth=None):
@@ -159,8 +182,13 @@ def draw_next_winner(draw_id):
     raise DrawError("Draw is busy, please try again")
 
 
-def void_winner(winner_id):
+VOID_REASONS = {'no_answer', 'ineligible', 'other'}
+
+
+def void_winner(winner_id, reason='other'):
     """Disqualify a winner (unreachable, ineligible...). Their prize slot reopens for a redraw."""
+    if reason not in VOID_REASONS:
+        raise DrawError(f"Reason must be one of {', '.join(sorted(VOID_REASONS))}")
     winner = db.session.get(Winner, winner_id)
     if not winner:
         raise DrawError("Winner not found")
@@ -168,6 +196,8 @@ def void_winner(winner_id):
         raise DrawError("Winner is already void")
 
     winner.status = 'void'
+    winner.void_reason = reason
+    winner.status_changed_at = datetime.utcnow()
     draw = winner.draw
     if draw.status == 'completed':
         draw.status = 'paused'
@@ -180,8 +210,7 @@ def get_animation_numbers(draw_id, count=125):
     """Cosmetic only: masked numbers for the spinning display. Has no link to winner selection."""
     already_won = db.session.query(Winner.participant_id).filter(Winner.draw_id == draw_id)
     rows = (
-        db.session.query(Participant.phone_number)
-        .filter(Participant.draw_id == draw_id, Participant.is_verified.is_(True))
+        _eligible_filter(db.session.query(Participant.phone_number), draw_id)
         .filter(~Participant.id.in_(already_won))
         .order_by(func.random())
         .limit(count)

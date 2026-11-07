@@ -3,7 +3,8 @@ import pandas as pd
 import csv
 import os
 from flask import current_app
-from app.models import Participant, Draw, db
+from app.extensions import db
+from app.models import Participant, Draw
 from datetime import datetime
 
 def process_csv_file(file_path, draw_id):

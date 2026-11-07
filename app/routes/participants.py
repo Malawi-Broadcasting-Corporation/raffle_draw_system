@@ -4,7 +4,7 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 import os
 import json
-from app import db
+from app.extensions import db
 from app.models import Participant, Draw, APIConfig, APIResponseLog
 from app.utils.file_processing import process_csv_file, process_excel_file, get_allowed_extensions
 from app.utils.security import audit_log, admin_required

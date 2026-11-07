@@ -1,14 +1,9 @@
 import os
+
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
-from flask_migrate import Migrate
 
 from app.config import config
-
-db = SQLAlchemy()
-login_manager = LoginManager()
-migrate = Migrate()
+from app.extensions import db, login_manager, migrate
 
 
 def create_app(config_name=None):
@@ -34,10 +29,10 @@ def create_app(config_name=None):
     from app import models  # noqa: F401
 
     # Blueprints
+    from app.routes.admin import admin_bp
     from app.routes.auth import auth_bp
     from app.routes.draws import draws_bp
     from app.routes.participants import participants_bp
-    from app.routes.admin import admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(draws_bp)

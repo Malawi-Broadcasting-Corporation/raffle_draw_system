@@ -1,6 +1,6 @@
 import click
 
-from app import db
+from app.extensions import db
 from app.models import User
 from app.utils.security import hash_password
 

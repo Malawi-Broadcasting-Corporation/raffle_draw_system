@@ -4,7 +4,7 @@ import time
 import json
 from threading import Thread, Event
 from flask import current_app
-from app import db
+from app.extensions import db
 from app.models import APIConfig, Participant, Draw, APIResponseLog
 from datetime import datetime
 

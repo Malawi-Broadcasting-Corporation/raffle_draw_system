@@ -17,7 +17,7 @@
         </div>
         
         <h2 class="draw-title" id="tv-draw-name">{% if current_draw %}{{ current_draw.name.upper() }}{% else %}READY FOR DRAW{% endif %}</h2>
-        <div class="prize-amount" id="tv-prize-amount">{% if current_draw %}{{ "MWK {:,.0f}".format(current_draw.prize_amount) }}{% else %}MWK 0{% endif %}</div>
+        <div class="prize-amount" id="tv-prize-amount">{% if current_draw and current_draw.next_prize %}{{ current_draw.next_prize.name }}{% endif %}</div>
         <div class="participant-count" id="tv-participant-count">0 Participants</div>
         
         <div class="progress-info hidden" id="progress-info"></div>

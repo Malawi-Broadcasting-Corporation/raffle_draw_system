@@ -2,7 +2,7 @@
 from functools import wraps
 from flask import Blueprint, request, jsonify, render_template, current_app
 from flask_login import login_required
-from app import db
+from app.extensions import db
 from app.models import Draw, Winner, Participant
 from app.services import draw_service
 from app.services.draw_service import DrawError
@@ -64,7 +64,8 @@ def draw_winner(draw_id):
 @audit_log('Void winner')
 @handle_draw_errors
 def void_winner(winner_id):
-    return _ok(state=draw_service.void_winner(winner_id))
+    reason = (request.get_json(silent=True) or {}).get('reason', 'other')
+    return _ok(state=draw_service.void_winner(winner_id, reason))
 
 
 # Public: the TV screen polls these

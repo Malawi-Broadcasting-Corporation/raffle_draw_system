@@ -46,7 +46,7 @@
             <thead>
                 <tr>
                     <th>Name</th>
-                    <th>Prize (MWK)</th>
+                    <th>Prizes</th>
                     <th>Winners</th>
                     <th>Participants</th>
                     <th>Status</th>
@@ -57,9 +57,9 @@
                 {% for draw in draws %}
                 <tr>
                     <td>{{ draw.name }}</td>
-                    <td>{{ "{:,.0f}".format(draw.prize_amount) }}</td>
-                    <td>{{ draw.number_of_winners }}</td>
-                    <td>{{ draw.participants|length }}</td>
+                    <td>{{ draw.prize_summary }}</td>
+                    <td>{{ draw.total_winners }}</td>
+                    <td>{{ draw.participant_count }}</td>
                     <td>
                         <span class="status-badge 
                             {% if draw.status == 'active' %}status-active

@@ -5,6 +5,13 @@ from app.models import Prize
 VALID_TYPES = {'cash', 'goods', 'voucher', 'service'}
 
 
+def summarize_prizes(prizes):
+    """Short one-line description for lists, e.g. '1× 55-inch TV, 3× MWK 50,000'."""
+    if not prizes:
+        return 'No prizes yet'
+    return ', '.join(f"{p.quantity}× {p.name}" for p in prizes)
+
+
 def parse_prizes(raw):
     """Validate a list of prize dicts from a request and return Prize objects."""
     if not raw or not isinstance(raw, list):
