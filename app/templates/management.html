@@ -1,214 +1,129 @@
-<!-- app/templates/management.html -->
 {% extends "base.html" %}
 
-{% block title %}Raffle Management{% endblock %}
-
-{% block page_title %}Dashboard{% endblock %}
-
-{% block content %}
-<div class="card">
-    <div class="card-header">
-        <h3 class="card-title">Current Draw Status</h3>
-        <button class="btn btn-sm btn-outline-secondary" id="refresh-status">
-            <i class="fas fa-sync-alt"></i> Refresh
-        </button>
-    </div>
-    <div class="card-body">
-        <div class="draw-status">
-            <div class="status-indicator mb-3">
-                <div class="status-light" id="status-light"></div>
-                <span class="status-text" id="draw-status-text">No Active Draw</span>
-            </div>
-            
-            <div class="status-details">
-                <p><strong>Current Draw:</strong> <span id="current-draw-name" class="text-muted">No active draw</span></p>
-                <p><strong>Participants:</strong> <span id="participant-count" class="text-muted">0</span></p>
-                <p><strong>Prize Amount:</strong> <span id="prize-amount" class="text-muted">MWK 0</span></p>
-                <p><strong>Progress:</strong> <span id="winners-progress" class="text-muted">0 winners drawn</span></p>
-            </div>
-            
-            <div class="draw-controls mt-4">
-                <select id="draw-select" class="form-control mb-3">
-                    <option value="">Select a draw...</option>
-                    {% for draw in draws %}
-                    <option value="{{ draw.id }}" 
-                            data-winners="{{ draw.total_winners }}"
-                            data-status="{{ draw.status }}">
-                        {{ draw.name }} - {{ draw.prize_summary }}
-                        {% if draw.status == 'active' %}(ACTIVE){% endif %}
-                        {% if draw.status == 'completed' %}(COMPLETED){% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
-                
-                <div class="btn-group" role="group">
-                    <button class="btn btn-success" id="activate-draw">
-                        <i class="fas fa-play"></i> Activate Draw
-                    </button>
-                    <button class="btn btn-warning" id="pause-draw" disabled>
-                        <i class="fas fa-pause"></i> Pause
-                    </button>
-                    <button class="btn btn-danger" id="stop-draw" disabled>
-                        <i class="fas fa-stop"></i> Complete Draw
-                    </button>
-                    <button class="btn btn-primary" id="open-tv-display" disabled>
-                        <i class="fas fa-tv"></i> TV Display
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-header">
-        <h3 class="card-title">Recent Winners</h3>
-        <div>
-            <span class="badge bg-info me-2" id="auto-refresh-indicator">Auto-refresh: ON</span>
-            <button class="btn btn-sm btn-outline-secondary" id="refresh-winners">
-                <i class="fas fa-sync-alt"></i> Refresh Now
-            </button>
-        </div>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Date & Time</th>
-                        <th>Winner Phone</th>
-                        <th>Prize</th>
-                        <th>Draw</th>
-                        <th>Position</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="winners-table">
-                    <tr>
-                        <td colspan="6" class="text-center text-muted">No winners yet</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-header">
-        <h3 class="card-title">Draw Statistics</h3>
-    </div>
-    <div class="card-body">
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h4>Total Draws</h4>
-                <p class="stat-number" id="total-draws">0</p>
-            </div>
-            <div class="stat-card">
-                <h4>Active Draws</h4>
-                <p class="stat-number" id="active-draws">0</p>
-            </div>
-            <div class="stat-card">
-                <h4>Completed Draws</h4>
-                <p class="stat-number" id="completed-draws">0</p>
-            </div>
-            <div class="stat-card">
-                <h4>Total Winners</h4>
-                <p class="stat-number" id="total-winners">0</p>
-            </div>
-            <div class="stat-card">
-                <h4>Total Prizes</h4>
-                <p class="stat-number" id="total-prizes">MWK 0</p>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
+{% block title %}Draw Control · MBC Raffle{% endblock %}
+{% block page_title %}Draw Control{% endblock %}
 
 {% block extra_css %}
-<style>
-.status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px;
-    border-radius: 8px;
-    background: #f8f9fa;
-}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/control.css') }}">
+{% endblock %}
 
-.status-light {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #6c757d;
-    animation: pulse 2s infinite;
-}
+{% block content %}
+<div class="card control-top">
+    <div class="row">
+        <label for="draw-select" class="form-label" style="margin:0">Draw</label>
+        <select id="draw-select" class="form-control grow">
+            <option value="">Select a draw…</option>
+            {% for draw in draws %}
+            <option value="{{ draw.id }}">{{ draw.name }} · {{ draw.prize_summary }} ({{ draw.status }})</option>
+            {% endfor %}
+        </select>
+        <a id="open-on-air" class="btn btn-primary hidden" target="mbc-on-air" href="#">📺 Open on-air screen</a>
+    </div>
+    <p class="muted control-hint">The on-air screen shows masked numbers only. Full numbers and names appear on this screen only.</p>
+</div>
 
-.status-light.active {
-    background: #28a745;
-    box-shadow: 0 0 10px #28a745;
-}
+<div id="no-draw" class="card empty-state">
+    <p>Select a draw to run it. Create draws and upload whitelists under <a href="{{ url_for('admin.admin_panel') }}">Draw Management</a>; upload entries under <a href="{{ url_for('participants.manage_participants') }}">Participants</a>.</p>
+</div>
 
-.status-light.paused {
-    background: #ffc107;
-    box-shadow: 0 0 10px #ffc107;
-}
+<div id="control" class="hidden">
+    <ol class="steps" id="steps">
+        <li data-step="entries"><span class="step-no">1</span><div><strong>Entries</strong><small id="step-entries"></small></div></li>
+        <li data-step="lock"><span class="step-no">2</span><div><strong>Lock list</strong><small id="step-lock"></small></div></li>
+        <li data-step="seed"><span class="step-no">3</span><div><strong>Take seed</strong><small id="step-seed"></small></div></li>
+        <li data-step="draw"><span class="step-no">4</span><div><strong>Draw winners</strong><small id="step-draw"></small></div></li>
+    </ol>
 
-.status-text {
-    font-weight: 600;
-    font-size: 1.1em;
-}
+    <div class="control-grid">
+        <!-- What to do next -->
+        <section class="card stage" aria-live="polite">
+            <div id="stage-entries" class="stage-panel hidden">
+                <h3>Check the entries, then lock the list</h3>
+                <dl class="facts" id="entry-facts"></dl>
+                <p class="muted">Locking freezes the entry list and records its fingerprint. After locking, no entry, prize or rule can change. Entries that arrive from the API later are kept on record but can't win.</p>
+                <button id="btn-lock" class="btn btn-primary btn-lg">🔒 Lock entry list</button>
+            </div>
 
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
-}
+            <div id="stage-seed" class="stage-panel hidden">
+                <h3>Take the seed</h3>
+                <p class="muted">The seed decides the winners together with the locked list. It must come from something nobody at MBC controls, and it can never be changed.</p>
+                <div class="seed-options">
+                    <div class="seed-option">
+                        <h4>Public randomness (drand)</h4>
+                        <p class="muted">Uses the first drand round produced after the lock. Takes up to 30 seconds.</p>
+                        <button id="btn-drand" class="btn btn-primary">🌐 Get drand seed</button>
+                    </div>
+                    <form id="manual-seed" class="seed-option">
+                        <h4>Manual seed</h4>
+                        <p class="muted">For example, roll a die 6 times <strong>on air, after the lock is shown</strong> and type the results.</p>
+                        <input id="seed-value" class="form-control" placeholder="e.g. 351624" autocomplete="off" minlength="6" required>
+                        <input id="seed-reference" class="form-control" placeholder="Where it came from, e.g. Dice rolled on air by the presenter" required>
+                        <button class="btn btn-secondary-outline" type="submit">✍️ Use manual seed</button>
+                    </form>
+                </div>
+                <button id="btn-unlock" class="btn btn-link small-link">Unlock entry list (admin, only before the seed)</button>
+            </div>
 
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-}
+            <div id="stage-ready" class="stage-panel hidden">
+                <h3 id="ready-title">Ready to draw</h3>
+                <p class="muted" id="ready-text">The list is locked and the seed is recorded.</p>
+                <button id="btn-start" class="btn btn-success btn-lg">▶ Start draw</button>
+            </div>
 
-.stat-card {
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 8px;
-    text-align: center;
-    border-left: 4px solid #941C26;
-}
+            <div id="stage-live" class="stage-panel hidden">
+                <h3>Next: <span id="next-prize"></span></h3>
+                <p class="muted" id="live-progress"></p>
+                <button id="btn-pick" class="btn btn-pick">🎯 PICK WINNER</button>
+                <button id="btn-pause" class="btn btn-warning">⏸ Pause</button>
+            </div>
 
-.stat-number {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #941C26;
-    margin: 0;
-}
+            <div id="stage-done" class="stage-panel hidden">
+                <h3>✅ Draw complete</h3>
+                <p class="muted">Every prize has a winner. You can still void a winner below; the draw then reopens for a redraw.</p>
+            </div>
 
-.winner-badge {
-    background: #28a745;
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.8em;
-}
+            <div id="stage-closed" class="stage-panel hidden">
+                <h3 id="closed-title"></h3>
+            </div>
+        </section>
 
-.draw-active {
-    background-color: #d4edda !important;
-    border-left: 4px solid #28a745;
-}
+        <!-- Latest winner, for the live call -->
+        <section class="card winner-card" id="winner-card" aria-live="assertive">
+            <h3>Latest winner</h3>
+            <div id="winner-empty" class="muted">No winner drawn yet.</div>
+            <div id="winner-body" class="hidden">
+                <div class="winner-prize" id="w-prize"></div>
+                <div class="winner-phone" id="w-phone"></div>
+                <div class="winner-name" id="w-name"></div>
+                <div class="winner-status" id="w-status"></div>
+                <div class="call-actions" id="w-actions">
+                    <p class="muted">Call the winner now. Record the outcome:</p>
+                    <button class="btn btn-success" data-outcome="confirm">✅ Answered</button>
+                    <button class="btn btn-warning" data-outcome="no_answer">📵 No answer</button>
+                    <button class="btn btn-danger" data-outcome="ineligible">⛔ Not eligible</button>
+                </div>
+            </div>
+        </section>
+    </div>
 
-.draw-completed {
-    background-color: #e2e3e5 !important;
-    border-left: 4px solid #6c757d;
-}
+    <section class="card">
+        <div class="card-header"><h3 class="card-title">Winners</h3></div>
+        <table class="table">
+            <thead><tr><th>#</th><th>Prize</th><th>Number</th><th>Name</th><th>Outcome</th><th></th></tr></thead>
+            <tbody id="winners-table"><tr><td colspan="6" class="muted">None yet</td></tr></tbody>
+        </table>
+    </section>
 
-#auto-refresh-indicator {
-    font-size: 0.75em;
-}
-</style>
+    <section class="card">
+        <div class="card-header"><h3 class="card-title">Draw record</h3></div>
+        <dl class="facts" id="record-facts"></dl>
+        <button id="btn-replay" class="btn btn-primary">🔁 Check draw (replay)</button>
+        <div id="replay-result" class="hidden"></div>
+    </section>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='js/management.js') }}"></script>
+<script>window.IS_ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};</script>
+<script src="{{ url_for('static', filename='js/control.js') }}"></script>
 {% endblock %}

@@ -180,7 +180,14 @@ function initializeUploadForm() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showNotification(data.message, 'success');
+                    let msg = data.message;
+                    const problems = (data.summary && data.summary.problems) || [];
+                    if (problems.length) {
+                        msg += '. Rejected rows: ' + problems.slice(0, 5)
+                            .map(p => `row ${p.line} (${p.reason})`).join('; ')
+                            + (problems.length > 5 ? ` and ${problems.length - 5} more` : '');
+                    }
+                    showNotification(msg, problems.length ? 'warning' : 'success');
                     uploadForm.reset();
                     
                     // Refresh participants list if we're on the view tab
@@ -244,24 +251,20 @@ function loadParticipants(drawId) {
             let pendingCount = 0;
             
             table.innerHTML = participants.map(p => {
-                if (p.is_verified) verifiedCount++;
+                const eligible = p.is_verified && !p.excluded_reason;
+                if (eligible) verifiedCount++;
                 else pendingCount++;
-                
+                const why = p.excluded_reason
+                    ? (EXCLUSION_LABELS[p.excluded_reason] || p.excluded_reason)
+                    : (p.is_verified ? 'Yes' : 'Not verified');
+
                 return `
                 <tr>
-                    <td>${p.phone_number}</td>
-                    <td>${new Date(p.added_at).toLocaleString()}</td>
-                    <td>
-                        <span class="badge ${p.source === 'api' ? 'bg-primary' : 'bg-secondary'}">
-                            ${p.source}
-                        </span>
-                    </td>
-                    <td>
-                        <span class="status-badge ${p.is_verified ? 'status-active' : 'status-inactive'}">
-                            ${p.is_verified ? 'Verified' : 'Pending'}
-                        </span>
-                    </td>
-                    <td>${p.draw_name || 'N/A'}</td>
+                    <td class="mono">${escapeHtml(p.phone_number)}</td>
+                    <td>${escapeHtml(p.name || '')}</td>
+                    <td>${escapeHtml(new Date(p.added_at).toLocaleString())}</td>
+                    <td><span class="pill">${escapeHtml(p.source)}</span></td>
+                    <td><span class="pill ${eligible ? 'pill-green' : 'pill-red'}">${escapeHtml(why)}</span></td>
                 </tr>
                 `;
             }).join('');
@@ -404,46 +407,8 @@ function viewResponseDetails(logId) {
 }
 
 function showNotification(message, type = 'info') {
-    // Remove any existing notifications
-    document.querySelectorAll('.notification').forEach(notification => {
-        notification.remove();
-    });
-    
-    const notification = document.createElement('div');
-    notification.className = `notification`;
-    
-    const typeClass = `notification-${type}`;
-    
-    notification.innerHTML = `
-        <div class="notification-content ${typeClass}">
-            <span class="notification-message">${message}</span>
-            <button class="notification-close">&times;</button>
-        </div>
-    `;
-    
-    const closeBtn = notification.querySelector('.notification-close');
-    closeBtn.addEventListener('click', () => {
-        notification.style.animation = 'slideOutRight 0.3s ease';
-        setTimeout(() => {
-            if (notification.parentElement) {
-                notification.remove();
-            }
-        }, 300);
-    });
-    
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.style.animation = 'slideOutRight 0.3s ease';
-            setTimeout(() => {
-                if (notification.parentElement) {
-                    notification.remove();
-                }
-            }, 300);
-        }
-    }, 5000);
-    
-    document.body.appendChild(notification);
+    // Messages can contain values from uploaded files, so always go through the escaping helper.
+    notify(message, type, type === 'error' ? 20000 : 8000);
 }
 
 class APIService {

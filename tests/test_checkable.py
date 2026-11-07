@@ -246,3 +246,32 @@ def test_http_flow_and_cli_replay(app, client, make_draw):
     result = app.test_cli_runner().invoke(args=['replay-draw', str(draw.id)])
     assert result.exit_code == 0, result.output
     assert 'Replay matches' in result.output
+
+
+def test_control_summary_and_call_outcomes(client, make_draw):
+    draw = make_draw(prizes=(('TV', 2),))
+    import_file(draw.id, 'e.csv', b"phone,name\n0999000001,Mary\n0999000002,Grace\n0999000003,Faith\n")
+    client.post(f'/api/draws/{draw.id}/lock')
+    client.post(f'/api/draws/{draw.id}/seed/manual', json={'seed': '351624', 'reference': 'dice'})
+    client.post(f'/api/draws/{draw.id}/start')
+    client.post(f'/api/draws/{draw.id}/draw-winner')
+
+    body = client.get(f'/api/draws/{draw.id}/summary').get_json()
+    w = body['summary']['winners'][0]
+    assert w['phone_local'].startswith('0999') and w['name'] in ('Mary', 'Grace', 'Faith')
+    assert body['summary']['seed'] == '351624'
+
+    public = client.get(f'/api/draws/{draw.id}/state').get_json()['state']
+    assert '***' in public['winners'][0]['phone_masked']
+    assert 'phone_local' not in public['winners'][0] and 'seed' not in public
+
+    assert client.post(f"/api/winners/{w['id']}/confirm").get_json()['success']
+    assert not client.post(f"/api/winners/{w['id']}/confirm").get_json()['success']
+
+
+def test_live_screen_follows_locked_draw_while_paused(client, make_draw):
+    draw = make_draw(prizes=(('TV', 1),))
+    import_file(draw.id, 'e.csv', ENTRIES)
+    assert client.get('/api/draws/live').get_json()['state'] is None
+    draw_service.lock_draw(draw.id)
+    assert client.get('/api/draws/live').get_json()['state']['draw_id'] == draw.id

@@ -1,38 +1,71 @@
-<!-- app/templates/tv_display.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Raffle Draw - TV Display</title>
+    <title>MBC Raffle · On Air</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tv_display.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="confetti-container"></div>
+<!-- On-air screen: display only. No buttons, links or cursor; it follows the control screen. -->
+<div id="stage" aria-live="polite">
+    <div class="bg-gradient"></div>
+    <img class="bg-swirl" src="{{ url_for('static', filename='images/mbc-watermark.png') }}" alt="">
+    <div class="bg-band"></div>
 
-    <div class="tv-container">
-        <div class="logo">
-            <img src="{{ url_for('static', filename='images/mbc-white-logo.png') }}" alt="MBC Logo">
+    <header class="top">
+        <div class="title-bar hidden" id="title-bar">
+            <span class="live-tag" id="live-tag">LIVE</span>
+            <span class="draw-title" id="draw-title"></span>
         </div>
-        
-        <h2 class="draw-title" id="tv-draw-name">{% if current_draw %}{{ current_draw.name.upper() }}{% else %}READY FOR DRAW{% endif %}</h2>
-        <div class="prize-amount" id="tv-prize-amount">{% if current_draw and current_draw.next_prize %}{{ current_draw.next_prize.name }}{% endif %}</div>
-        <div class="participant-count" id="tv-participant-count">0 Participants</div>
-        
-        <div class="progress-info hidden" id="progress-info"></div>
-        
-        <div class="draw-container">
-            <div class="number-display" id="number-display">READY</div>
-            <div class="winner-display hidden" id="winner-display"></div>
+        <div class="logo-plate">
+            <img src="{{ url_for('static', filename='images/mbc-logo-colour.png') }}" alt="MBC">
         </div>
-        
-        <div class="draw-controls">
-            <button class="tv-btn tv-btn-draw hidden" id="tv-draw-winner" disabled>DRAW WINNER</button>
-            <button class="tv-btn tv-btn-stop hidden" id="tv-stop-draw">COMPLETE DRAW</button>
-        </div>
-    </div>
+    </header>
 
-    <script src="{{ url_for('static', filename='js/tv_display.js') }}"></script>
+    <!-- Idle: no draw to show -->
+    <section class="idle" id="idle">
+        <img class="idle-logo" src="{{ url_for('static', filename='images/mbc-logo-colour.png') }}" alt="MBC">
+        <div class="idle-text">Raffle draw coming up</div>
+    </section>
+
+    <!-- Main draw view -->
+    <section class="main hidden" id="main">
+        <div class="prize-label" id="prize-label"></div>
+        <div class="number-box" id="number-box">
+            <div class="number" id="number">READY</div>
+        </div>
+        <div class="caption" id="caption"></div>
+        <div class="notice hidden" id="notice"></div>
+    </section>
+
+    <!-- Results: when every prize has a winner -->
+    <section class="results hidden" id="results">
+        <h2>Congratulations to our winners</h2>
+        <ol id="results-list"></ol>
+    </section>
+
+    <aside class="winners-panel hidden" id="winners-panel">
+        <h3>Winners</h3>
+        <ol id="winners-list"></ol>
+    </aside>
+
+    <footer class="bottom">
+        <span class="tagline">inspiring the nation</span>
+        <span class="proof" id="proof"></span>
+    </footer>
+
+    <div id="confetti"></div>
+</div>
+
+<script>
+    window.TV_CONFIG = {
+        drawId: {{ current_draw.draw_id if (pinned and current_draw) else 'null' }},
+        pinned: {{ 'true' if pinned else 'false' }},
+    };
+</script>
+<script src="{{ url_for('static', filename='js/tv_display.js') }}"></script>
 </body>
 </html>

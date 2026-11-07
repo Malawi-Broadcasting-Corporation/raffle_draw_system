@@ -1,78 +1,97 @@
-<!-- app/templates/admin.html -->
 {% extends "base.html" %}
 
-{% block title %}Draw Management{% endblock %}
-
+{% block title %}Draw Management · MBC Raffle{% endblock %}
 {% block page_title %}Draw Management{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/control.css') }}">
+<style>
+    .prize-row { display: grid; grid-template-columns: 2fr 1fr 90px 1fr 40px; gap: 8px; margin-bottom: 8px; }
+    .prize-head { font-size: 12px; color: #6b6b6b; font-weight: 600; }
+    .remove-prize { background: none; border: 0; font-size: 22px; color: #a3141a; cursor: pointer; }
+    .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .rule-help { font-size: 13px; color: #6b6b6b; margin-top: 4px; }
+    .draw-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .wl-input { display: none; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="card">
-    <div class="card-header">
-        <h3 class="card-title">Create New Draw</h3>
-    </div>
+    <div class="card-header"><h3 class="card-title">Create a draw</h3></div>
     <div class="card-body">
         <form id="create-draw-form">
             <div class="form-group">
-                <label class="form-label">Draw Name</label>
-                <input type="text" class="form-control" id="draw-name" required>
+                <label class="form-label" for="draw-name">Draw name</label>
+                <input type="text" class="form-control" id="draw-name" required maxlength="100" placeholder="e.g. Christmas Promo Draw">
             </div>
+
             <div class="form-group">
-                <label class="form-label">Prize Amount (MWK)</label>
-                <input type="number" class="form-control" id="draw-prize" min="0" step="1000" required>
+                <label class="form-label">Prizes, in the order they are drawn</label>
+                <div class="prize-row prize-head"><span>Prize</span><span>Type</span><span>How many</span><span>Value (MWK, optional)</span><span></span></div>
+                <div id="prize-rows"></div>
+                <button type="button" class="btn btn-sm btn-secondary-outline" id="add-prize">+ Add prize</button>
             </div>
+
+            <div class="rules form-group">
+                <div>
+                    <label class="form-label" for="entry-mode">How entries count</label>
+                    <select id="entry-mode" class="form-control">
+                        <option value="per_sms">One entry per SMS (more SMS = more chances)</option>
+                        <option value="per_number">One entry per number (repeats count once)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Whitelist</label>
+                    <label><input type="checkbox" id="whitelist-enabled"> Only numbers on a whitelist can win</label>
+                    <div class="rule-help">Upload the whitelist from the table below after creating the draw.</div>
+                </div>
+            </div>
+
             <div class="form-group">
-                <label class="form-label">Number of Winners</label>
-                <input type="number" class="form-control" id="draw-winners" min="1" value="1" required>
+                <label class="form-label" for="draw-description">Description (optional)</label>
+                <textarea class="form-control" id="draw-description" rows="2"></textarea>
             </div>
-            <div class="form-group">
-                <label class="form-label">Draw Date & Time</label>
-                <input type="datetime-local" class="form-control" id="draw-date">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Description</label>
-                <textarea class="form-control" id="draw-description" rows="3"></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary">Create Draw</button>
+            <button type="submit" class="btn btn-primary">Create draw</button>
         </form>
     </div>
 </div>
 
 <div class="card">
-    <div class="card-header">
-        <h3 class="card-title">Active Draws</h3>
-    </div>
+    <div class="card-header"><h3 class="card-title">Draws</h3></div>
     <div class="card-body">
         <table class="table">
             <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Prizes</th>
-                    <th>Winners</th>
-                    <th>Participants</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
+                <tr><th>Name</th><th>Prizes</th><th>Entries</th><th>Rules</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody id="draws-table">
                 {% for draw in draws %}
-                <tr>
-                    <td>{{ draw.name }}</td>
+                <tr data-id="{{ draw.id }}">
+                    <td><strong>{{ draw.name }}</strong></td>
                     <td>{{ draw.prize_summary }}</td>
-                    <td>{{ draw.total_winners }}</td>
                     <td>{{ draw.participant_count }}</td>
-                    <td>
-                        <span class="status-badge 
-                            {% if draw.status == 'active' %}status-active
-                            {% elif draw.status == 'completed' %}status-inactive
-                            {% else %}status-inactive{% endif %}">
-                            {{ draw.status|title }}
-                        </span>
+                    <td class="rules-cell" data-mode="{{ draw.entry_mode }}" data-whitelist="{{ 'on' if draw.whitelist_enabled else 'off' }}">
+                        <span class="pill">{{ 'Per SMS' if draw.entry_mode == 'per_sms' else 'Per number' }}</span>
+                        {% if draw.whitelist_enabled %}<span class="pill pill-maroon">Whitelist</span>{% endif %}
+                        {% if draw.locked %}<span class="pill pill-green">Locked</span>{% endif %}
                     </td>
-                    <td>
-                        <button class="btn btn-primary btn-sm" onclick="editDraw({{ draw.id }})">Edit</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteDraw({{ draw.id }})">Delete</button>
+                    <td><span class="pill">{{ draw.status|title }}</span></td>
+                    <td class="draw-actions">
+                        <a class="btn btn-sm btn-primary" href="{{ url_for('draws.management') }}?draw={{ draw.id }}">Run</a>
+                        {% if not draw.locked %}
+                        <button class="btn btn-sm btn-secondary-outline" data-action="mode">Change rule</button>
+                        <label class="btn btn-sm btn-secondary-outline">Upload whitelist
+                            <input type="file" class="wl-input" accept=".csv,.xlsx,.json" data-action="whitelist">
+                        </label>
+                        {% if draw.whitelist_enabled %}
+                        <button class="btn btn-sm btn-secondary-outline" data-action="clear-whitelist">Remove whitelist</button>
+                        {% endif %}
+                        <button class="btn btn-sm btn-danger" data-action="delete">Delete</button>
+                        {% endif %}
                     </td>
                 </tr>
+                {% else %}
+                <tr><td colspan="6" class="muted">No draws yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

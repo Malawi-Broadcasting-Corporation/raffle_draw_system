@@ -30,6 +30,9 @@ def admin_panel():
             'total_winners': draw.total_winners,
             'status': draw.status,
             'participant_count': counts.get(draw.id, 0),
+            'entry_mode': draw.entry_mode,
+            'whitelist_enabled': draw.whitelist_enabled,
+            'locked': draw.is_locked,
         } for draw in draws]
         return render_template('admin.html', draws=draws_data)
     except Exception as e:

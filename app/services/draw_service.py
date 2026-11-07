@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from app.extensions import db
 from app.services import checkable
 from app.models import ENTRY_PER_NUMBER, Draw, Participant, Winner
-from app.utils.phone import mask_phone
+from app.utils.phone import mask_phone, to_local
 
 _rng = secrets.SystemRandom()
 
@@ -127,7 +127,68 @@ def get_state(draw_id):
         'total_winners': total,
         'next_prize': _prize_dict(*upcoming) if upcoming else None,
         'prizes': [{**_prize_dict(p), 'drawn': min(t, p.quantity)} for p, t in progress],
+        # Public: masked numbers only. The on-air screen animates when a new position appears.
+        'winners': [_public_winner(w) for w in _winners(draw.id)],
     }
+
+
+def _winners(draw_id):
+    return Winner.query.filter_by(draw_id=draw_id).order_by(Winner.position).all()
+
+
+def _public_winner(w):
+    return {
+        'id': w.id,
+        'position': w.position,
+        'phone_masked': mask_phone(w.participant.phone_number),
+        'prize': w.prize.name,
+        'status': w.status,
+        'void_reason': w.void_reason,
+    }
+
+
+def winner_details(draw_id):
+    """Full details for the control screen (never shown on air)."""
+    return [{
+        **_public_winner(w),
+        'phone_local': to_local(w.participant.phone_number),
+        'name': w.participant.name,
+        'won_at': w.won_at.isoformat() + 'Z' if w.won_at else None,
+    } for w in _winners(draw_id)]
+
+
+def control_summary(draw_id):
+    """Counts and checkable-draw details for the control screen (login only)."""
+    draw = _get_draw(draw_id)
+    excluded = dict(
+        db.session.query(Participant.excluded_reason, func.count(Participant.id))
+        .filter(Participant.draw_id == draw_id, Participant.excluded_reason.isnot(None))
+        .group_by(Participant.excluded_reason)
+        .all()
+    )
+    pool = build_pool(draw)
+    return {
+        'entries_total': Participant.query.filter_by(draw_id=draw_id).count(),
+        'excluded': excluded,
+        'tickets': len(pool),
+        'numbers': len({phone for _, phone in pool}),
+        'numbers_can_win': eligible_number_count(draw),
+        'seed': draw.seed,
+        'winners': winner_details(draw_id),
+    }
+
+
+def confirm_winner(winner_id):
+    """The winner answered the live call and is eligible."""
+    winner = db.session.get(Winner, winner_id)
+    if not winner:
+        raise DrawError("Winner not found")
+    if winner.status != 'drawn':
+        raise DrawError(f"Winner is already {winner.status}")
+    winner.status = 'confirmed'
+    winner.status_changed_at = datetime.utcnow()
+    db.session.commit()
+    return get_state(winner.draw_id)
 
 
 def _remaining_prizes(draw):

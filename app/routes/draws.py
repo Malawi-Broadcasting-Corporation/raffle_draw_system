@@ -105,12 +105,26 @@ def draw_winner(draw_id):
 
 @draws_bp.route('/api/winners/<int:winner_id>/void', methods=['POST'])
 @login_required
-@admin_required
 @audit_log('Void winner')
 @handle_draw_errors
 def void_winner(winner_id):
     reason = (request.get_json(silent=True) or {}).get('reason', 'other')
     return _ok(state=draw_service.void_winner(winner_id, reason))
+
+
+@draws_bp.route('/api/winners/<int:winner_id>/confirm', methods=['POST'])
+@login_required
+@audit_log('Confirm winner')
+@handle_draw_errors
+def confirm_winner(winner_id):
+    return _ok(state=draw_service.confirm_winner(winner_id))
+
+
+@draws_bp.route('/api/draws/<int:draw_id>/summary')
+@login_required
+@handle_draw_errors
+def draw_summary(draw_id):
+    return _ok(state=draw_service.get_state(draw_id), summary=draw_service.control_summary(draw_id))
 
 
 # Public: the TV screen polls these
@@ -135,6 +149,10 @@ def _draw_row(draw, counts):
         'total_winners': draw.total_winners,
         'prize_summary': summarize_prizes(draw.prizes),
         'participant_count': counts.get(draw.id, 0),
+        'entry_mode': draw.entry_mode,
+        'whitelist_enabled': draw.whitelist_enabled,
+        'locked': draw.is_locked,
+        'seeded': bool(draw.seed),
         'created_at': draw.created_at.isoformat() if draw.created_at else None,
     }
 
@@ -158,8 +176,19 @@ def get_draws():
 @draws_bp.route('/api/draws/live')
 @handle_draw_errors
 def live_draw():
-    live = Draw.query.filter_by(status='active').first()
+    live = _live_draw()
     return _ok(state=draw_service.get_state(live.id) if live else None)
+
+
+def _live_draw():
+    """The draw the on-air screen should follow: the active one, else the most recently locked one.
+
+    Falling back to the locked draw keeps the screen on the same draw while it is paused
+    for a live call, and shows the results once it completes.
+    """
+    return (Draw.query.filter_by(status='active').first()
+            or Draw.query.filter(Draw.locked_at.isnot(None), Draw.status != 'cancelled')
+            .order_by(Draw.locked_at.desc()).first())
 
 
 @draws_bp.route('/api/winners')
@@ -185,7 +214,7 @@ def tv_display(draw_id=None):
     state = None
     try:
         if draw_id is None:
-            live = Draw.query.filter_by(status='active').first()
+            live = _live_draw()
             draw_id = live.id if live else None
         if draw_id:
             state = draw_service.get_state(draw_id)

@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Raffle Draw System{% endblock %}</title>
+    <title>{% block title %}MBC Raffle{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
@@ -13,15 +14,16 @@
     <div class="container management-interface">
         <div class="sidebar">
             <div class="sidebar-header">
-                <h2>🎉 Raffle System MW</h2>
+                <img src="{{ url_for('static', filename='images/mbc-logo-colour.png') }}" alt="MBC" class="sidebar-logo">
+                <h2>Raffle Draw</h2>
             </div>
             <ul class="sidebar-menu">
-                <li><a href="{{ url_for('draws.management') }}" class="{% if request.endpoint == 'draws.management' %}active{% endif %}">📊 Dashboard</a></li>
+                <li><a href="{{ url_for('draws.management') }}" class="{% if request.endpoint == 'draws.management' %}active{% endif %}">🎛️ Draw Control</a></li>
                 <li><a href="{{ url_for('admin.admin_panel') }}" class="{% if request.endpoint == 'admin.admin_panel' %}active{% endif %}">🎯 Draw Management</a></li>
                 <li><a href="{{ url_for('participants.manage_participants') }}" class="{% if request.endpoint == 'participants.manage_participants' %}active{% endif %}">👥 Participants</a></li>
                 <li><a href="{{ url_for('admin.settings') }}" class="{% if request.endpoint == 'admin.settings' %}active{% endif %}">⚙️ Settings</a></li>
                 <li><a href="{{ url_for('admin.audit_logs') }}" class="{% if request.endpoint == 'admin.audit_logs' %}active{% endif %}">📋 Audit Log</a></li>
-                <li><a href="{{ url_for('draws.tv_display') }}">📺 TV Display</a></li>
+                <li><a href="{{ url_for('draws.tv_display') }}" target="mbc-on-air">📺 On-Air Screen</a></li>
                 {% if current_user.is_authenticated %}
                 <li><a href="{{ url_for('auth.logout') }}">🚪 Logout</a></li>
                 {% endif %}
@@ -56,7 +58,7 @@
         {% block tv_content %}{% endblock %}
     {% endif %}
     
-    <script src="{{ url_for('static', filename='js/management.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>
