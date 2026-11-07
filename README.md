@@ -116,15 +116,27 @@ Only one draw can be live at a time. A draw can't start until it has enough veri
 
 The system is being reworked from a single-cash-prize model to multiple prizes per draw, with logic moved into a service layer. Until that work is merged, some screens may still use the old endpoints. See the open issues and pull requests for current progress.
 
+## Transparency
+
+These draws decide who receives money and prizes, so the code is public on purpose. Anyone can read exactly how winners are chosen. The selection logic is in [`app/services/draw_service.py`](app/services/draw_service.py).
+
 ## Contributing
 
-1. Branch from `master` (`feature/<short-name>` or `fix/<short-name>`).
+**Branching model**
+
+| Branch | Role |
+|--------|------|
+| `master` | Production. Updated **only** by merging `develop`. |
+| `develop` | Integration branch. Every feature or fix branch starts here and merges back here. |
+| `feature/<short-name>`, `fix/<short-name>` | Day-to-day work, branched from `develop`. |
+
+1. Branch from `develop` and open your pull request against `develop`.
 2. For any model change, generate a migration: `flask --app run db migrate -m "describe change"`, then review the generated file.
 3. Never commit `.env`, databases or uploaded files. `.gitignore` already covers them.
-4. Open a pull request for review before merging.
+4. A release is a pull request from `develop` into `master`. No other branch merges into `master`.
 
 ---
 
 <p align="center">
-  <sub>© Malawi Broadcasting Corporation. Internal use. All rights reserved.</sub>
+  <sub>© Malawi Broadcasting Corporation</sub>
 </p>
