@@ -12,6 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.13-1f2937">
   <img alt="Flask" src="https://img.shields.io/badge/flask-3.1-1f2937">
   <img alt="Status" src="https://img.shields.io/badge/status-in%20development-c8102e">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-1f2937">
 </p>
 
 ---
@@ -135,8 +136,12 @@ These draws decide who receives money and prizes, so the code is public on purpo
 3. Never commit `.env`, databases or uploaded files. `.gitignore` already covers them.
 4. A release is a pull request from `develop` into `master`. No other branch merges into `master`.
 
+## License
+
+Released under the [MIT License](LICENSE).
+
 ---
 
 <p align="center">
-  <sub>© Malawi Broadcasting Corporation</sub>
+  <sub>© 2026 Malawi Broadcasting Corporation</sub>
 </p>
